@@ -1,0 +1,36 @@
+Cuai TTS Service Setup Instructions
+====================================
+
+This project has been updated to use the Cuai TTS service at https://dev1.cuai.space/docs instead of FakeYou.
+
+Setup Steps:
+1. Update your character configurations:
+   - In the CharacterInfo components, replace the old fakeYouUUID field with voiceModel
+   - Set voiceModel to one of the available voices (e.g., "rick", "morty", "trump", "Noaman", "noama")
+   - You can list available voices by visiting: https://dev1.cuai.space/voices
+
+2. In the Unity Inspector:
+   - Replace the FakeYouAPIManager component with CuaiTTSAPIManager
+   - Assign the new component to the WholeThingManager and SceneDirector
+
+3. The old FakeYouAPIManager.cs has been renamed to FakeYouAPIManager_DEPRECATED.cs
+   - You can delete this file once you've confirmed everything works
+
+API Configuration:
+- Base URL: https://dev1.cuai.space
+- Endpoint: POST /generate-speech
+- Authentication: None required (public API)
+- Supported formats: WAV
+- Request timeout: 30 seconds
+- Retry attempts: 3
+- Text encoding: ASCII (unicode characters are automatically converted)
+
+Available Voices (as of setup):
+- rick
+- morty
+- trump
+- Noaman
+- noama
+
+For more information and updated voice list, visit: https://dev1.cuai.space/docs
+Or check available voices: https://dev1.cuai.space/voices

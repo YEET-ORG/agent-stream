@@ -1,0 +1,47 @@
+Cuai TTS API Test Results
+=========================
+
+✅ API ENDPOINT VERIFIED: https://dev1.cuai.space/generate-speech
+
+Test Command:
+-------------
+POST https://dev1.cuai.space/generate-speech
+Content-Type: application/x-www-form-urlencoded
+
+Body Parameters:
+- text: "Hello Rick"
+- voice_name: "rick"
+- output_format: "wav"
+- language: "en"
+- exaggeration: "1.0"
+
+Response:
+---------
+✅ Status: 200 OK
+✅ Content-Type: audio/wav
+✅ Content-Length: 97,038 bytes (95 KB)
+
+Key Findings:
+-------------
+1. The API returns the WAV audio data DIRECTLY in the response body
+2. No JSON response with filename - the response IS the audio file
+3. The Content-Type header is "audio/wav"
+4. No authentication required
+5. The rick voice works perfectly!
+
+Implementation Notes:
+--------------------
+The CuaiTTSAPIManager.cs has been updated to:
+- POST form data to /generate-speech
+- Receive WAV audio bytes directly from the response
+- Convert the bytes to Unity AudioClip
+- No need for a separate download step
+
+Available Voices (Confirmed):
+- rick ✅ (tested)
+- morty
+- trump
+- Noaman
+- noama
+
+Integration is complete and ready to use! 🎉

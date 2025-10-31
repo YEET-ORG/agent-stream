@@ -1,0 +1,17 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://schemas.microsoft.com/packaging/2012/06/nuspec.xsd">
+  <metadata>
+    <id>Universal.Phonetic.Metaphone</id>
+    <version>1.0.0</version>
+    <authors>Andrew Ong</authors>
+    <owners>Andrew Ong</owners>
+    <requireLicenseAcceptance>false</requireLicenseAcceptance>
+    <description>This is a C# implementation of the Metaphone3 phonetic algorithm by Lawrence Philips given here: https://searchcode.com/codesearch/raw/2366000/.</description>
+    <releaseNotes>Initial release.</releaseNotes>
+    <copyright>Copyright 2010, Lawrence Philips</copyright>
+    <tags>Metaphone3 Phonetic Algorithm</tags>
+    <dependencies>
+      <group targetFramework=".NETStandard2.0" />
+    </dependencies>
+  </metadata>
+</package>
