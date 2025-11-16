@@ -18,8 +18,6 @@ using System.Text;
 public class WholeThingManager : MonoBehaviour
 {
     public static WholeThingManager Singleton;
-    public OpenAISlurDetector slurDetectorChatGPT;
-    public SlurDetectorEvan slurDetectorPhonic;
     public AIController AIController;
     public OpenAICameraDirector openAICameraDirector;
     public SceneDirector sceneDirector;
@@ -55,7 +53,7 @@ public class WholeThingManager : MonoBehaviour
 
     public GameObject bottomBarVotingInfoText;
     public GameObject topBarDiscordPluf;
-    public string firstPrompt = "Banana";
+    public string firstPrompt = ""; // No default prompt - only use chat prompts
     public bool runMainLoop = true;
 
     [Header("Manual Input Mode")]
@@ -67,8 +65,6 @@ public class WholeThingManager : MonoBehaviour
 
     public bool usingChatGptCameraShots = true;
 
-    public bool useChatgptSlurDetection = false;
-    public bool usePhonicSlurDetection = true;
     public bool useAiArt = true;
 
     public CharacterInfo defaultGuy;
@@ -136,8 +132,7 @@ public class WholeThingManager : MonoBehaviour
     {
         // chill for a bit to give time to setup everything	
         await Task.Delay(2000);
-        string response = await slurDetectorChatGPT.EnterPromptAndGetResponse("How do I install Tensorflow for my GPU?");
-        Debug.Log("response " + response);
+        // Testing code removed
     }
     async void ToggleDiscordPlugEvery10Seconds()
     {
@@ -244,10 +239,124 @@ public class WholeThingManager : MonoBehaviour
             // Check if we're using manual input mode
             if (useManualInputMode)
             {
-                // Manual input mode - wait for user input
+                // Manual input mode - check for pump.fun chat messages first, then wait for user input
                 // Keep voting UI hidden
                 enableOrDisableVotingUI(false);
                 
+                // Check if there are any pump.fun chat messages available
+                string chatPrompt = "";
+                string chatAuthor = "";
+                
+                // Debug: Log current state
+                if (youTubeChat == null)
+                {
+                    Debug.LogWarning("WholeThingManager: youTubeChat is null! Make sure it's assigned in Inspector.");
+                }
+                else if (youTubeChat.topicQueue == null)
+                {
+                    Debug.LogWarning("WholeThingManager: youTubeChat.topicQueue is null!");
+                }
+                else
+                {
+                    Debug.Log($"WholeThingManager: Checking for chat prompts. Current topicQueue count: {youTubeChat.topicQueue.Count}");
+                }
+                
+                // Get the next topic from the queue (FIFO)
+                // Check multiple times with small delay to catch messages that arrive just after loop starts
+                for (int checkAttempt = 0; checkAttempt < 3; checkAttempt++)
+                {
+                    if (youTubeChat != null && youTubeChat.topicQueue != null && youTubeChat.topicQueue.Count > 0)
+                    {
+                        string nextTopic = youTubeChat.GetNextTopic();
+                        
+                        if (!string.IsNullOrEmpty(nextTopic))
+                        {
+                            Debug.Log($"WholeThingManager: Found next topic from queue: '{nextTopic}'");
+                            
+                            string[] parts = nextTopic.Split('\n');
+                            if (parts.Length >= 2)
+                            {
+                                chatPrompt = parts[0].Trim();
+                                chatAuthor = parts[1].Trim();
+                                
+                                // Validate the prompt is not empty
+                                if (!string.IsNullOrWhiteSpace(chatPrompt))
+                                {
+                                    Debug.Log($"prompt: '{chatPrompt}' by {chatAuthor}");
+                                    Debug.Log($"✅ WholeThingManager: Detected and using pump.fun chat prompt: '{chatPrompt}' by {chatAuthor}");
+                                    break; // Found valid prompt, exit check loop
+                                }
+                                else
+                                {
+                                    Debug.LogWarning($"WholeThingManager: Chat prompt is empty, skipping. Full topic: '{nextTopic}'");
+                                    chatPrompt = ""; // Clear it so we don't use empty prompt
+                                }
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"WholeThingManager: Topic format invalid (expected 'prompt\\nauthor', got {parts.Length} parts). Full topic: '{nextTopic}'");
+                            }
+                        }
+                    }
+                    
+                    // If no prompt found and not last attempt, wait a bit before checking again
+                    if (string.IsNullOrEmpty(chatPrompt) && checkAttempt < 2)
+                    {
+                        await Task.Delay(200); // Wait 200ms before checking again
+                    }
+                }
+                
+                if (string.IsNullOrEmpty(chatPrompt))
+                {
+                    Debug.Log("WholeThingManager: No chat prompts available in queue after checking, will show manual input UI");
+                    chatPrompt = ""; // Ensure it's empty to trigger manual input
+                }
+                
+                if (!string.IsNullOrEmpty(chatPrompt))
+                {
+                    // Use the pump.fun chat message directly
+                    // Hide manual input UI since we're using chat
+                    if (manualInputPanel != null)
+                    {
+                        manualInputPanel.SetActive(false);
+                    }
+                    
+                    chosenTopicText = chatPrompt;
+                    chosenTopicAuthor = chatAuthor;
+                    backupTopicText = ""; // No backup prompt
+                    backupTopicAuthor = "";
+                    
+                    Debug.Log($"✅ USING CHAT PROMPT: '{chatPrompt}' by {chatAuthor}");
+                    
+                    // Start dance floor camera while scene is being generated
+                    danceFloorManager.DanceCameraStart();
+                    
+                    // Generate the scene immediately
+                    CreateScene(chosenTopicText, chosenTopicAuthor, backupTopicText, backupTopicAuthor, usingVoiceActing);
+                    
+                    // Wait for scene generation to complete
+                    while (stillGeneratingScene)
+                    {
+                        await Task.Delay(500);
+                    }
+                    
+                    // Stop dance floor camera when scene is ready
+                    danceFloorManager.DanceCameraStop();
+                    
+                    // Play the generated scene immediately
+                    if (nextScene != null)
+                    {
+                        currentScene = nextScene;
+                        nextScene = null; // Clear it so we don't play it again
+                        RunScene(currentScene);
+                    }
+                    
+                    // Skip the rest of the loop
+                    if (justDoOneScene) { return; }
+                    continue;
+                }
+                
+                // No chat message available, show manual input UI
                 if (manualInputPanel != null)
                 {
                     manualInputPanel.SetActive(true);
@@ -256,16 +365,78 @@ public class WholeThingManager : MonoBehaviour
                 manualPromptSubmitted = false;
                 manualPromptInput = "";
                 
-                // Wait for manual input submission
+                // Wait for manual input submission OR check for new chat prompts
                 while (!manualPromptSubmitted)
                 {
+                    // Check if a new chat prompt arrived while waiting
+                    if (youTubeChat != null && youTubeChat.topicQueue != null && youTubeChat.topicQueue.Count > 0)
+                    {
+                        string nextTopic = youTubeChat.GetNextTopic();
+                        if (!string.IsNullOrEmpty(nextTopic))
+                        {
+                            string[] parts = nextTopic.Split('\n');
+                            if (parts.Length >= 2)
+                            {
+                                string newChatPrompt = parts[0].Trim();
+                                string newChatAuthor = parts[1].Trim();
+                                
+                                if (!string.IsNullOrWhiteSpace(newChatPrompt))
+                                {
+                                    Debug.Log($"✅ New chat prompt arrived while waiting: '{newChatPrompt}' by {newChatAuthor}");
+                                    
+                                    // Hide manual input and use the chat prompt
+                                    if (manualInputPanel != null)
+                                    {
+                                        manualInputPanel.SetActive(false);
+                                    }
+                                    
+                                    chosenTopicText = newChatPrompt;
+                                    chosenTopicAuthor = newChatAuthor;
+                                    backupTopicText = "";
+                                    backupTopicAuthor = "";
+                                    
+                                    Debug.Log($"✅ USING CHAT PROMPT: '{newChatPrompt}' by {newChatAuthor}");
+                                    
+                                    // Start dance floor camera while scene is being generated
+                                    danceFloorManager.DanceCameraStart();
+                                    
+                                    // Generate the scene immediately
+                                    CreateScene(chosenTopicText, chosenTopicAuthor, backupTopicText, backupTopicAuthor, usingVoiceActing);
+                                    
+                                    // Wait for scene generation to complete
+                                    while (stillGeneratingScene)
+                                    {
+                                        await Task.Delay(500);
+                                    }
+                                    
+                                    // Stop dance floor camera when scene is ready
+                                    danceFloorManager.DanceCameraStop();
+                                    
+                                    // Play the generated scene immediately
+                                    if (nextScene != null)
+                                    {
+                                        currentScene = nextScene;
+                                        nextScene = null; // Clear it so we don't play it again
+                                        RunScene(currentScene);
+                                    }
+                                    
+                                    // Skip the rest of the loop
+                                    if (justDoOneScene) { return; }
+                                    continue; // Go back to start of main loop
+                                }
+                            }
+                        }
+                    }
+                    
                     await Task.Delay(100);
                 }
                 
                 chosenTopicText = manualPromptInput;
                 chosenTopicAuthor = "Manual Input";
-                backupTopicText = "Generate a Random Solana story";
-                backupTopicAuthor = "Backup";
+                backupTopicText = ""; // No backup prompt
+                backupTopicAuthor = "";
+                
+                Debug.Log($"✅ USING MANUAL INPUT PROMPT: '{manualPromptInput}'");
                 
                 // Clear the input field
                 if (manualInputField != null)
@@ -308,18 +479,48 @@ public class WholeThingManager : MonoBehaviour
             }
             else
             {
-                // Original voting mode
-                // ok lets get the list of topics
+                // Original voting mode - using queue now (FIFO)
                 enableOrDisableVotingUI(true);
-                List<string> randomTopics = youTubeChat.GetRandomTopics();
-
-                if (randomTopics == null)
+                
+                // Get 3 topics from queue for voting
+                List<string> randomTopics = new List<string>();
+                for (int j = 0; j < 3; j++)
                 {
-                    randomTopics = new List<string> {"morty talks with yoda\nme",
-                    "Rick and morty fight batman\nme",
-                      "Rick and morty go to Australia\nme" };
+                    if (youTubeChat != null && youTubeChat.topicQueue != null && youTubeChat.topicQueue.Count > 0)
+                    {
+                        string topic = youTubeChat.GetNextTopic();
+                        if (!string.IsNullOrEmpty(topic))
+                        {
+                            randomTopics.Add(topic);
+                            string[] parts = topic.Split('\n');
+                            if (parts.Length >= 2)
+                            {
+                                Debug.Log($"prompt: '{parts[0].Trim()}' by {parts[1].Trim()}");
+                            }
+                        }
+                    }
                 }
 
+                if (randomTopics.Count == 0)
+                {
+                    // No prompts available - can't proceed with voting mode
+                    Debug.Log("No prompts available in queue for voting mode. Waiting for chat prompts...");
+                    await Task.Delay(2000);
+                    continue;
+                }
+
+                // Need at least 3 topics for voting - if we have less, wait for more
+                if (randomTopics.Count < 3)
+                {
+                    Debug.Log($"Only {randomTopics.Count} prompt(s) available, need 3 for voting. Waiting for more chat prompts...");
+                    // Put the topics back in the queue
+                    foreach (string topic in randomTopics)
+                    {
+                        youTubeChat.topicQueue.Enqueue(topic);
+                    }
+                    await Task.Delay(2000);
+                    continue;
+                }
 
                 // the topics are stored like "name of topic \nauthor name \n"
                 // so lets extract the topic and author 
@@ -332,7 +533,6 @@ public class WholeThingManager : MonoBehaviour
                     randomTopics[j] = topic;
                     randomTopicAuthors.Add(author);
                 }
-
 
                 //display the topics
                 topicOption1.text = randomTopics[0];
@@ -428,17 +628,13 @@ public class WholeThingManager : MonoBehaviour
                 if (voteNumbers[1] > voteNumbers[0] && voteNumbers[1] > voteNumbers[2]) chosenTopic = 1;
                 if (voteNumbers[2] > voteNumbers[1] && voteNumbers[2] > voteNumbers[0]) chosenTopic = 2;
 
-                // choose a backup topic just incase the chosen topic is rejected by chatgpt
-                int backupTopic = 0;
-                if (backupTopic == chosenTopic)
-                {
-                    backupTopic = 1;
-                }
-
+                // No backup topic - only use the chosen one
                 chosenTopicText = randomTopics[chosenTopic];
                 chosenTopicAuthor = randomTopicAuthors[chosenTopic];
-                backupTopicText = randomTopics[backupTopic];
-                backupTopicAuthor = randomTopicAuthors[backupTopic];
+                backupTopicText = ""; // No backup prompt
+                backupTopicAuthor = "";
+                
+                Debug.Log($"✅ USING VOTING PROMPT: '{chosenTopicText}' by {chosenTopicAuthor} (votes: {voteNumbers[chosenTopic]})");
 
                 youTubeChat.AddToBlacklist(randomTopics[chosenTopic]);
                 enableOrDisableVotingUI(false);
@@ -460,15 +656,25 @@ public class WholeThingManager : MonoBehaviour
 
             if (justDoOneScene) { return; }
 
-            if (runningTestTopicList && testTopicList.Count > 0)
+            // Test topic list disabled - only use chat or manual input
+            // if (runningTestTopicList && testTopicList.Count > 0)
+            // {
+            //     CreateScene(testTopicList[0], "me", "banana", "me", usingVoiceActing);
+            //     testTopicList.RemoveAt(0);
+            // }
+            // else 
+            if (!useManualInputMode) // Only generate in background for voting mode
             {
-                CreateScene(testTopicList[0], "me", "banana", "me", usingVoiceActing);
-                testTopicList.RemoveAt(0);
-
-            }
-            else if (!useManualInputMode) // Only generate in background for voting mode
-            {
-                CreateScene(chosenTopicText, chosenTopicAuthor, backupTopicText, backupTopicAuthor, usingVoiceActing);
+                // Only create scene if we have a valid prompt from voting
+                if (!string.IsNullOrEmpty(chosenTopicText))
+                {
+                    Debug.Log($"Creating scene with prompt from voting: '{chosenTopicText}' by {chosenTopicAuthor}");
+                    CreateScene(chosenTopicText, chosenTopicAuthor, backupTopicText, backupTopicAuthor, usingVoiceActing);
+                }
+                else
+                {
+                    Debug.LogWarning("No valid prompt available for scene creation. Skipping.");
+                }
             }
 
             firstRunThrough = false;
@@ -497,6 +703,14 @@ public class WholeThingManager : MonoBehaviour
     // basically this turns an input prompt into a list of lines of dialog + stage directions, and a list of audio files for the tts.
     public async Task CreateScene(string prompt, string promptAuthor, string backupPrompt, string backupPromptAuthor, bool isThisSceneUsingVoiceActing)
     {
+        Debug.Log($"🎬 CreateScene called with prompt: '{prompt}' by {promptAuthor}");
+        
+        if (string.IsNullOrEmpty(prompt))
+        {
+            Debug.LogError("❌ CreateScene called with EMPTY prompt! This should not happen.");
+            return;
+        }
+        
         string initialPrompt = "";
         string chatGPTOutput = "";
         string[] chatGPTOutputLines = null;
@@ -579,17 +793,12 @@ public class WholeThingManager : MonoBehaviour
             // }
 
 
-            // if the number of lines is less that 10 this means that chatgpt was like "WAAAAAA i cant do that"
+            // if the number of lines is less that 1 this means that chatgpt was like "WAAAAAA i cant do that"
             if (chatGPTOutputLines.Length < 1)
             {
-                Debug.Log("oh no we cant do that");
-                prompt = backupPrompt;
-                promptAuthor = backupPromptAuthor;
-                initialPrompt = prompt;
-                youTubeChat.AddToBlacklist(backupPrompt);
-                // in the case of a double fail this be the chosen story
-                backupPrompt = "Generate a Random Solana story";
-                backupPromptAuthor = "Me because you guys are nasty";
+                Debug.Log("ChatGPT failed to generate script. Skipping this prompt and waiting for new one.");
+                // Skip this prompt and go back to waiting for chat/manual input
+                continue;
             }
             else
             {
@@ -610,75 +819,6 @@ public class WholeThingManager : MonoBehaviour
 
                 // }
 
-
-
-
-                textField.text = creatingScene + " --- " + "Detecting Slurs...";
-
-
-
-                if (useChatgptSlurDetection)
-                {
-                    string deslurredChatgptOutput = slurDetectorChatGPT.RemoveDirectSlurs(chatGPTOutput);
-                    // ask chatgpt to remove slurs because you guys are too creative	
-                    // this will return all the slurs in square brackets e.g. [Nword][Nword but spelt slightly different]	
-                    string detectedSlurs = await slurDetectorChatGPT.EnterPromptAndGetResponse(deslurredChatgptOutput);
-                    if (detectedSlurs.ToLower().Contains("no slurs detected"))
-                    {
-                        Debug.Log("Slur free yay " + deslurredChatgptOutput);
-                        // ok we good	
-                    }
-                    else
-                    {
-                        // get the slurs into an array	
-                        string[] detectedSlurArray = Regex.Split(detectedSlurs, @"\[|\]");
-                        string[] detectedSlurArrayFiltered = System.Array.FindAll(detectedSlurArray, s => !string.IsNullOrEmpty(s));
-                        // if the shit is empty then that means something fucked up. 	
-                        // go to the backup prompt 	
-                        if (detectedSlurArrayFiltered.Length == 0)
-                        {
-                            Debug.Log("probably slurs so im not gonna risk it");
-                            prompt = backupPrompt;
-                            promptAuthor = backupPromptAuthor;
-                            initialPrompt = prompt;
-                            youTubeChat.AddToBlacklist(backupPrompt);
-                            // in the case of a double fail this be the chosen story	
-                            backupPrompt = "Generate a Random story";
-                            backupPromptAuthor = "Me because you guys are nasty";
-                            continue;
-                        }
-                        else
-                        {
-                            Debug.Log("here be the slurs vvvvvv");
-                            foreach (string s in detectedSlurArrayFiltered)
-                            {
-                                Debug.Log(s);
-                            }
-                            foreach (string slur in detectedSlurArrayFiltered)
-                            {
-                                string pattern = Regex.Escape(slur);
-                                deslurredChatgptOutput = Regex.Replace(deslurredChatgptOutput, pattern, "nope", RegexOptions.IgnoreCase);
-                            }
-                            chatGPTOutput = deslurredChatgptOutput;
-                            str = AIController.OutputString;
-                            chatGPTOutputLines = Utils.ProcessOutputIntoStringArray(chatGPTOutput, ref str);
-                            AIController.OutputString = str;
-                        }
-                        //we good i think, we should be slur free. yay	
-                    }
-
-
-
-                }
-
-                if (usePhonicSlurDetection)
-                {
-                    for (int i = 0; i < chatGPTOutputLines.Length; i++)
-                    {
-                        chatGPTOutputLines[i] = slurDetectorPhonic.RemoveSlurs(chatGPTOutputLines[i]);
-                    }
-
-                }
 
                 foundGoodPrompt = true;
             }

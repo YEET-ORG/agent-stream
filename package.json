@@ -1,5 +1,10 @@
 {
   "dependencies": {
-    "puppeteer": "^21.1.1"
+    "puppeteer": "^21.1.1",
+    "pump-chat-client": "^1.0.0"
+  },
+  "scripts": {
+    "pump-chat": "node pump-chat-bridge.js",
+    "pump-stream-config": "node pump-fun-stream-config.js"
   }
 }

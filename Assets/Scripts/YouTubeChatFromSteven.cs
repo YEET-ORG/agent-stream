@@ -41,9 +41,9 @@ public class YouTubeChatFromSteven : MonoBehaviour
         }
     }
 
-    private int maxListSize = 1000;
+    private int maxQueueSize = 1000;
 
-    public List<string> topicSuggestions = new List<string>();
+    public Queue<string> topicQueue = new Queue<string>();
 
     public List<string> voteSuggestions = new List<string>();
 
@@ -62,19 +62,21 @@ public class YouTubeChatFromSteven : MonoBehaviour
     {
         if (usingYoutubeChatStuff)
         {
-            LoadTopicsFromFile(); // Load the topicSuggestions list from the file
-            InvokeRepeating("SaveTopicsToFile", 60f, 60f); // Save topics to file every 60 seconds
+            // Don't load old prompts from file - only use live chat prompts
+            // LoadTopicsFromFile(); // DISABLED - only use live prompts from chat
+            topicQueue.Clear(); // Ensure queue starts empty
+            InvokeRepeating("SaveTopicsToFile", 60f, 60f); // Save topics to file every 60 seconds (for persistence, but don't load on startup)
             Server();
         }
     }
 
 
-    // Method to save the topicSuggestions list to a file
+    // Method to save the topicQueue to a file
     private void SaveTopicsToFile()
     {
         try
         {
-            File.WriteAllLines(saveFilePath, topicSuggestions);
+            File.WriteAllLines(saveFilePath, topicQueue.ToArray());
         }
         catch (Exception ex)
         {
@@ -82,7 +84,7 @@ public class YouTubeChatFromSteven : MonoBehaviour
         }
     }
 
-    // Method to load the topicSuggestions list from a file
+    // Method to load the topicQueue from a file
     private void LoadTopicsFromFile()
     {
         if (File.Exists(saveFilePath))
@@ -90,14 +92,14 @@ public class YouTubeChatFromSteven : MonoBehaviour
             try
             {
                 var lines = File.ReadAllLines(saveFilePath);
-                topicSuggestions.Clear(); // Clear existing items
+                topicQueue.Clear(); // Clear existing items
                 for (int i = 0; i < lines.Length; i += 2)
                 {
                     if (i + 1 < lines.Length) // Ensure there's an author for every topic
                     {
                         string topicMessage = lines[i];
                         string author = lines[i + 1];
-                        topicSuggestions.Add(topicMessage + "\n" + author);
+                        topicQueue.Enqueue(topicMessage + "\n" + author);
                     }
                 }
             }
@@ -137,43 +139,58 @@ public class YouTubeChatFromSteven : MonoBehaviour
 
                     Debug.Log("recieved: " + message);
 
-
-                    if (message.ToLower().StartsWith("topic:"))
+                    // Check if it's a vote first
+                    if (message.ToLower().StartsWith("vote:"))
                     {
-
-                        string topicMessage = message.Substring("topic:".Length).Trim();
-
-                        // Check if the topicMessage contains any word from the wordBlacklist
-                        bool containsBlacklistedWord = wordBlacklist.Any(blackWord => topicMessage.ToLower().Contains(blackWord.ToLower()));
-                        bool haveAlreadyDoneTopic = alreadyTakenTopics.Contains(topicMessage);
-                        // Check if the message after "topic:" is not empty or only spaces
-                        if (!string.IsNullOrWhiteSpace(topicMessage) && !haveAlreadyDoneTopic && !containsBlacklistedWord)
-                        {
-
-                            // Add new message text to message texts
-                            topicSuggestions.Add(topicMessage + "\n" + author);
-
-                            Debug.Log(topicMessage + "\n" + author);
-
-                            // Limit the size of messageTexts
-                            if (topicSuggestions.Count > maxListSize)
-                            {
-                                // Remove oldest message text
-                                topicSuggestions.RemoveAt(0);
-                            }
-
-                        }
-                    }
-                    else if (message.ToLower().StartsWith("vote:"))
-                    {
-
                         string voteMessage = message.Substring("vote:".Length).Trim();
 
-                        // Check if the message after "topic:" is not empty or only spaces
+                        // Check if the message after "vote:" is not empty or only spaces
                         if (!string.IsNullOrWhiteSpace(voteMessage))
                         {
                             // Add new message text to message texts
                             voteSuggestions.Add(voteMessage);
+                        }
+                    }
+                    // Otherwise, treat ALL messages as topic suggestions (for pump.fun chat)
+                    else
+                    {
+                        string topicMessage = message.Trim();
+
+                        // Check if the topicMessage contains any word from the wordBlacklist
+                        bool containsBlacklistedWord = wordBlacklist.Any(blackWord => topicMessage.ToLower().Contains(blackWord.ToLower()));
+                        bool haveAlreadyDoneTopic = alreadyTakenTopics.Contains(topicMessage);
+                        
+                        // Check if the message is not empty or only spaces
+                        if (!string.IsNullOrWhiteSpace(topicMessage) && !haveAlreadyDoneTopic && !containsBlacklistedWord)
+                        {
+                            // Add new message to queue
+                            string formattedTopic = topicMessage + "\n" + author;
+                            topicQueue.Enqueue(formattedTopic);
+
+                            Debug.Log($"✅ YouTubeChatFromSteven: Added topic to queue: '{topicMessage}' by {author} (Queue size: {topicQueue.Count})");
+
+                            // Limit the size of queue
+                            if (topicQueue.Count > maxQueueSize)
+                            {
+                                // Remove oldest message from queue
+                                string removed = topicQueue.Dequeue();
+                                Debug.Log($"YouTubeChatFromSteven: Removed oldest topic from queue (queue full): '{removed}'");
+                            }
+                        }
+                        else
+                        {
+                            if (string.IsNullOrWhiteSpace(topicMessage))
+                            {
+                                Debug.Log($"⚠️ YouTubeChatFromSteven: Skipped empty topic message from {author}");
+                            }
+                            else if (haveAlreadyDoneTopic)
+                            {
+                                Debug.Log($"⚠️ YouTubeChatFromSteven: Skipped duplicate topic: '{topicMessage}'");
+                            }
+                            else if (containsBlacklistedWord)
+                            {
+                                Debug.Log($"⚠️ YouTubeChatFromSteven: Skipped blacklisted topic: '{topicMessage}'");
+                            }
                         }
                     }
                 }
@@ -228,47 +245,20 @@ public class YouTubeChatFromSteven : MonoBehaviour
         return counts;
     }
 
-    //returns a list of 3 random topics
-    public List<string> GetRandomTopics()
+    // Get the next topic from the queue (FIFO)
+    public string GetNextTopic()
     {
-        int n = 3;
-        List<string> randomTopics = new List<string>();
-
-        if (topicSuggestions.Count < n)
+        if (topicQueue.Count > 0)
         {
-            Debug.LogError("Not enough topics to select from.");
-            return null;  // Return empty list
+            string topic = topicQueue.Dequeue();
+            string[] parts = topic.Split('\n');
+            if (parts.Length >= 1)
+            {
+                alreadyTakenTopics.Add(parts[0]); // add just the message to the already taken topics
+            }
+            return topic;
         }
-
-        for (int i = 0; i < n; i++)
-        {
-
-
-            int randomIndex = UnityEngine.Random.Range(0, topicSuggestions.Count);
-            string selectedTopic = topicSuggestions[randomIndex];
-
-            // Ensure that the topic has not already been chosen
-            if (!randomTopics.Contains(selectedTopic))
-            {
-                randomTopics.Add(selectedTopic);
-                alreadyTakenTopics.Add(selectedTopic.Split("\n")[0]);// add just the message to the already taken topics
-                topicSuggestions.RemoveAt(randomIndex);
-            }
-            else
-            {
-                // Since the topic was already selected, decrement the loop counter to re-try the random selection
-                topicSuggestions.RemoveAt(randomIndex);
-                i--;
-            }
-
-            // if no topics are left then fuck me i guess. 
-            if (topicSuggestions.Count <= 0)
-            {
-                return null;
-            }
-        }
-
-        return randomTopics;
+        return null;
     }
 
 
